@@ -1,19 +1,61 @@
-import { Duration, Stack, StackProps } from 'aws-cdk-lib';
-import * as sns from 'aws-cdk-lib/aws-sns';
-import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { Stack, StackProps, DockerImage } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import {
+  aws_lambda_nodejs as NodeLambda,
+  aws_lambda as Lambda,
+  aws_apigateway as ApiGateway,
+  aws_s3 as S3,
+  aws_s3_deployment as S3Deployment,
+} from 'aws-cdk-lib'
+import { spawnSync } from 'child_process';
+import * as path from 'path'
 
 export class S3PresignedStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const queue = new sqs.Queue(this, 'S3PresignedQueue', {
-      visibilityTimeout: Duration.seconds(300)
-    });
+    const dataBucket = new S3.Bucket(this, 'dataBucket', {
+      bucketName: `testdatabucket${new Date().getFullYear()}`,
+      blockPublicAccess: S3.BlockPublicAccess.BLOCK_ALL,
+    })
 
-    const topic = new sns.Topic(this, 'S3PresignedTopic');
+    const testFunction = new NodeLambda.NodejsFunction(this, 'testFunction', {
+      functionName: 'testFunction',
+      entry: path.join(__dirname, '../lambda/index.ts'),
+      runtime: Lambda.Runtime.NODEJS_14_X,
+      handler: 'handler',
+    })
 
-    topic.addSubscription(new subs.SqsSubscription(queue));
+    dataBucket.grantRead(testFunction)
+
+    new ApiGateway.LambdaRestApi(this, 'lambdaTest', {
+      handler: testFunction
+    })
+
+    const staticSiteBucket = new S3.Bucket(this, 'Bucket', {
+      bucketName: `testspabucket${new Date().getFullYear()}`,
+      publicReadAccess: true,
+      websiteIndexDocument: 'index.html'
+    })
+    const staticSite = S3Deployment.Source.asset('../frontend', {
+      bundling: {
+        image: DockerImage.fromRegistry('node'),
+        local: {
+          tryBundle: (outputDir) => {
+            spawnSync('npm', ['generate', outputDir], {
+              stdio: 'inherit'
+            })
+            return true
+          }
+        }
+      }
+    })
+
+    new S3Deployment.BucketDeployment(this, 'BucketDeployment', {
+      sources: [staticSite],
+      destinationBucket: staticSiteBucket
+    })
+
+
   }
 }

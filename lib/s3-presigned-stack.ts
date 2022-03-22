@@ -1,4 +1,4 @@
-import { Stack, StackProps, DockerImage } from 'aws-cdk-lib';
+import { Stack, StackProps, DockerImage, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import {
   aws_lambda_nodejs as NodeLambda,
@@ -37,12 +37,12 @@ export class S3PresignedStack extends Stack {
       publicReadAccess: true,
       websiteIndexDocument: 'index.html'
     })
-    const staticSite = S3Deployment.Source.asset('../frontend', {
+    const staticSite = S3Deployment.Source.asset('./frontend', {
       bundling: {
         image: DockerImage.fromRegistry('node'),
         local: {
           tryBundle: (outputDir) => {
-            spawnSync('npm', ['generate', outputDir], {
+            spawnSync('yarn', ['generate', outputDir], {
               stdio: 'inherit'
             })
             return true
@@ -56,6 +56,12 @@ export class S3PresignedStack extends Stack {
       destinationBucket: staticSiteBucket
     })
 
+    new CfnOutput(this, 'dataBucket', {
+      value: dataBucket.bucketName
+    })
+    new CfnOutput(this, 'staticSiteBucket', {
+      value: staticSiteBucket.bucketName
+    })
 
   }
 }
